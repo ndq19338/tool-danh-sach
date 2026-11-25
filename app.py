@@ -27,20 +27,41 @@ def _render_sidebar() -> ImportConfig:
     else:
         st.sidebar.error(f"❌ Không tìm thấy file phôi:\n`{TEMPLATE_PATH}`")
 
+    doc_date = st.sidebar.date_input(
+        "Ngày/tháng/năm điền vào văn bản",
+        value=date.today(),
+        format="DD/MM/YYYY",
+        help="Thay thế trực tiếp dòng 'Hà Nội, ngày ... tháng ... năm ...' trong Phôi DS.docx (giữ nguyên font/cỡ chữ gốc).",
+    )
+
+    convert_old_provinces = st.sidebar.checkbox(
+        "Tự động quy đổi tỉnh/thành cũ sang tên mới sau sáp nhập",
+        value=True,
+        help="Quy đổi cột Nơi sinh (bảng 16 cột & bảng BCH 14 cột) về danh sách 34 tỉnh/thành phố mới sau sáp nhập (Nghị quyết 202/2025/QH15) và các tỉnh cũ như Hà Tây -> Hà Nội.",
+    )
+
     fill_missing_phone = st.sidebar.checkbox(
         "Tự động điền SĐT ngẫu nhiên chuẩn VN khi bị trống",
         value=True,
         help="Nếu ô SĐT trong file đầu vào bị trống, tự động sinh số 10 chữ số chuẩn đầu số nhà mạng VN.",
     )
 
+    cfg = ImportConfig(
+        doc_date=doc_date,
+        convert_old_provinces=convert_old_provinces,
+        fill_missing_phone=fill_missing_phone,
+    )
+
     st.sidebar.divider()
+    if cfg.formatted_date_vn:
+        st.sidebar.caption(f"📅 Dòng ngày xuất ra:\n**{cfg.formatted_date_vn}**")
     st.sidebar.caption(
         "🔒 **Nguyên tắc bảo toàn Phôi:**\n"
         "- Giữ nguyên 100% khổ giấy, lề trang, section, font chữ, cỡ chữ, độ rộng cột, viền bảng, chiều cao dòng và auto-numbering `STT` của `Phôi DS.docx`.\n"
-        "- Chỉ thay thế đúng 14 vị trí dấu `...` / `....` và điền dữ liệu vào Bảng 16 cột & Bảng BCH 14 cột.\n"
-        "- Các ô bị lỗi dữ liệu (ngày sinh/SĐT không hợp lệ) sẽ được **bôi vàng nhạt** trong file Word kết quả và ghi chi tiết vào `Bao_cao_tong_hop.xlsx`."
+        "- Chỉ cập nhật dòng ngày tháng năm, thay thế đúng 14 vị trí dấu `...` / `....` và điền dữ liệu vào Bảng 16 cột & Bảng BCH 14 cột.\n"
+        "- Các ô bị lỗi dữ liệu (ngày sinh, SĐT hoặc Nơi sinh không nhận diện được) sẽ được **bôi vàng nhạt** trong file Word và ghi chi tiết vào `Bao_cao_tong_hop.xlsx`."
     )
-    return ImportConfig(fill_missing_phone=fill_missing_phone)
+    return cfg
 
 
 def _render_results(batch: BatchImportResult) -> None:
@@ -157,7 +178,7 @@ def _render_results(batch: BatchImportResult) -> None:
         if warn_rows:
             st.dataframe(pd.DataFrame(warn_rows), use_container_width=True, hide_index=True)
         else:
-            st.success("🎉 Không phát hiện lỗi ngày sinh hoặc SĐT nào!")
+            st.success("🎉 Không phát hiện lỗi dữ liệu nào (ngày sinh, SĐT, Nơi sinh đều hợp lệ)!")
 
 
 def main() -> None:

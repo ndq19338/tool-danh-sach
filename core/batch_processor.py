@@ -280,6 +280,7 @@ def process_batch_import(
             imported_bytes = import_into_template(
                 template_bytes=template_bytes,
                 data=extracted,
+                doc_date=config.doc_date,
             )
             warn_note = (
                 f"{len(extracted.warnings)} cảnh báo dữ liệu"

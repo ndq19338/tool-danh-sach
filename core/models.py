@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Literal, Optional
 
 
@@ -8,7 +9,21 @@ from typing import Literal, Optional
 class ImportConfig:
     """Configuration options for batch importing into Phôi DS.docx."""
 
+    doc_date: Optional[date] = field(default_factory=date.today)
+    convert_old_provinces: bool = True
     fill_missing_phone: bool = True
+
+    @property
+    def formatted_date_vn(self) -> Optional[str]:
+        if self.doc_date is None:
+            return None
+        day_str = f"{self.doc_date.day:02d}"
+        month_str = (
+            f"{self.doc_date.month:02d}"
+            if self.doc_date.month in (1, 2)
+            else str(self.doc_date.month)
+        )
+        return f"Hà Nội, ngày {day_str} tháng {month_str} năm {self.doc_date.year:04d}"
 
 
 @dataclass

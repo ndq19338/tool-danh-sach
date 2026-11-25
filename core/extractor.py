@@ -27,6 +27,7 @@ from .models import (
     ImportConfig,
     ValidationWarning,
 )
+from .province_mapping import normalize_birthplace
 
 _DOT_ONLY_RE = re.compile(r"^[\.\u2026\-\s_*]+$")
 _BODY_CLASS_TITLE_RE = re.compile(
@@ -298,7 +299,9 @@ def extract_class_data(
         gender = normalize_gender(raw[3])
         ethnicity = normalize_ethnicity(raw[4])
         religion = normalize_religion(raw[5])
-        birthplace = vn_title_case(raw[6], is_place=True)
+        birthplace, place_err = normalize_birthplace(
+            raw[6], apply_merger=config.convert_old_provinces
+        )
 
         dob_val, dob_err = clean_and_validate_date(raw[7], is_dob=True)
         social_group = raw[8]
@@ -327,6 +330,20 @@ def extract_class_data(
         note_val = raw[15]
 
         row_idx_0 = stt - 1
+        if place_err:
+            member_invalid_cells.add((row_idx_0, 6))
+            warnings.append(
+                ValidationWarning(
+                    file_name=file_name,
+                    table_name="Danh sách Đoàn viên",
+                    row_stt=str(stt),
+                    mssv=mssv,
+                    full_name=full_name,
+                    column_name="Nơi sinh",
+                    original_value=raw[6],
+                    reason=place_err,
+                )
+            )
         if dob_err:
             member_invalid_cells.add((row_idx_0, 7))
             warnings.append(
@@ -426,7 +443,9 @@ def extract_class_data(
             gender = normalize_gender(raw[3])
             ethnicity = normalize_ethnicity(raw[4])
             religion = normalize_religion(raw[5])
-            birthplace = vn_title_case(raw[6], is_place=True)
+            birthplace, place_err = normalize_birthplace(
+                raw[6], apply_merger=config.convert_old_provinces
+            )
 
             dob_val, dob_err = clean_and_validate_date(raw[7], is_dob=True)
             social_group = raw[8]
@@ -441,6 +460,20 @@ def extract_class_data(
             position_val = normalize_position(raw[13])
 
             bch_row_idx_0 = bch_stt - 1
+            if place_err:
+                bch_invalid_cells.add((bch_row_idx_0, 6))
+                warnings.append(
+                    ValidationWarning(
+                        file_name=file_name,
+                        table_name="Lý lịch BCH",
+                        row_stt=str(bch_stt),
+                        mssv=mssv,
+                        full_name=full_name,
+                        column_name="Nơi sinh",
+                        original_value=raw[6],
+                        reason=place_err,
+                    )
+                )
             if dob_err:
                 bch_invalid_cells.add((bch_row_idx_0, 7))
                 warnings.append(

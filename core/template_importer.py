@@ -4,6 +4,7 @@ import copy
 import io
 import random
 import re
+from datetime import date
 from typing import Iterable, Optional
 
 from docx import Document
@@ -17,6 +18,7 @@ from .models import ExtractedClassData
 
 WARNING_FILL_HEX = "FFF2CC"  # Light yellow highlight for invalid data cells
 _DOTS_RE = re.compile(r"\.{3,}|…+")
+_DATE_LINE_RE = re.compile(r"hà\s*nội\s*,?\s*ngày.*?tháng.*?năm.*", re.IGNORECASE)
 _W14_PARA_ID = "{http://schemas.microsoft.com/office/word/2010/wordml}paraId"
 _XML_SPACE = "{http://www.w3.org/XML/1998/namespace}space"
 
@@ -259,18 +261,59 @@ def _replace_stats_placeholders(stats_tbl: Table, data: ExtractedClassData) -> N
                     break
 
 
+def _replace_date_in_paragraph(paragraph: Paragraph, doc_date: date) -> bool:
+    """
+    Update 'Hà Nội, ngày ... tháng ... năm ...' in-place on the template's original runs,
+    preserving 100% of every run's <w:rPr> and paragraph's <w:pPr>.
+    Uses Vietnamese administrative convention: day 01..09 has '0'; month 01..02 has '0',
+    months 3..12 have no leading '0'.
+    """
+    if not _DATE_LINE_RE.search(clean_text(paragraph.text)):
+        return False
+
+    day_str = f"{doc_date.day:02d}"
+    month_str = f"{doc_date.month:02d}" if doc_date.month in (1, 2) else str(doc_date.month)
+    year_str = f"{doc_date.year:04d}"
+
+    runs = paragraph.runs
+    if not runs:
+        return False
+
+    # Fast path for Phôi DS.docx: ['Hà Nội, ngày ', '05', ' tháng ', '11', ' năm ', '2026']
+    if (
+        len(runs) >= 6
+        and "ngày" in runs[0].text.lower()
+        and "tháng" in runs[2].text.lower()
+        and "năm" in runs[4].text.lower()
+    ):
+        runs[1].text = day_str
+        runs[3].text = month_str
+        runs[5].text = year_str
+        for extra_r in runs[6:]:
+            extra_r.text = ""
+        return True
+
+    # Fallback: preserve Run 0's exact <w:rPr> and write full formatted date
+    runs[0].text = f"Hà Nội, ngày {day_str} tháng {month_str} năm {year_str}"
+    for r in runs[1:]:
+        r.text = ""
+    return True
+
+
 def _replace_all_placeholders(
     doc: Document,
     data: ExtractedClassData,
     main_tbl: Optional[Table],
     bch_tbl: Optional[Table],
     stats_tbl: Optional[Table],
+    doc_date: Optional[date] = None,
 ) -> None:
     """
-    Replace all 14 '...' / '....' placeholders in Phôi DS.docx without altering
-    any formatting of the template:
+    Replace all 14 '...' / '....' placeholders (and optionally the header date line)
+    in Phôi DS.docx without altering any formatting of the template:
       - Body paragraphs: 'Đoàn viên Thanh niên Chi đoàn ...', 'Ban Chấp hành Chi đoàn ...'
       - Table 0 & Table 4 nested tables: 'CHI ĐOÀN ...' & 'CHI ĐOÀN ....' -> UPPERCASE class name
+      - Table 0 & Table 4 date lines (when doc_date is provided): 'Hà Nội, ngày ... tháng ... năm ...'
       - Table 2 (8 stats cells): '...' -> formatted stat counts (01..09 for 1..9)
       - Table 3 & Table 6 nested tables: '...' -> Chi đoàn Bí thư name
     """
@@ -314,6 +357,9 @@ def _replace_all_placeholders(
 
                 for p in block_paragraphs:
                     raw = clean_text(p.text)
+                    if doc_date is not None and _DATE_LINE_RE.search(raw):
+                        _replace_date_in_paragraph(p, doc_date)
+                        continue
                     if not _DOTS_RE.search(raw):
                         continue
                     low = raw.lower()
@@ -326,10 +372,11 @@ def _replace_all_placeholders(
 def import_into_template(
     template_bytes: bytes,
     data: ExtractedClassData,
+    doc_date: Optional[date] = None,
 ) -> bytes:
     """
-    Load a clean copy of Phôi DS.docx, replace the 14 placeholders in-place,
-    and import member + BCH rows into Table 1 & Table 5 without altering any
+    Load a clean copy of Phôi DS.docx, replace the 14 placeholders (and optional date)
+    in-place, and import member + BCH rows into Table 1 & Table 5 without altering any
     template layout, margins, fonts, sizes, column widths, or borders.
     """
     doc = Document(io.BytesIO(template_bytes))
@@ -338,8 +385,8 @@ def import_into_template(
     if main_tbl is None:
         raise ValueError("File phôi không có bảng Danh sách Đoàn viên (16 cột).")
 
-    # A. Replace all 14 '...' / '....' placeholders in-place
-    _replace_all_placeholders(doc, data, main_tbl, bch_tbl, stats_tbl)
+    # A. Replace all 14 '...' / '....' placeholders (and optional header date) in-place
+    _replace_all_placeholders(doc, data, main_tbl, bch_tbl, stats_tbl, doc_date=doc_date)
 
     # B. Import data rows into Table 1 (16 cols) & Table 5 (14 cols)
     _populate_template_data_table(
